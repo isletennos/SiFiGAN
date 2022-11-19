@@ -34,7 +34,7 @@ class HiFiGANGenerator(nn.Module):
         upsample_scales=(5, 4, 3, 2),
         upsample_kernel_sizes=(10, 8, 6, 4),
         qp_resblock_kernel_size=3,
-        qp_resblock_dilations=[(1), (1, 2), (1, 2, 4), (1, 2, 4, 8)],
+        qp_resblock_dilations=[(1,), (1, 2), (1, 2, 4), (1, 2, 4, 8)],
         qp_use_additional_convs=True,
         resblock_kernel_sizes=(3, 7, 11),
         resblock_dilations=[(1, 3, 5), (1, 3, 5), (1, 3, 5)],
@@ -263,7 +263,7 @@ class SiFiGANGenerator(nn.Module):
         upsample_kernel_sizes=(10, 8, 6, 4),
         source_network_params={
             "resblock_kernel_size": 3,  # currently only 3 is supported.
-            "resblock_dilations": [(1), (1, 2), (1, 2, 4), (1, 2, 4, 8)],
+            "resblock_dilations": [(1,), (1, 2), (1, 2, 4), (1, 2, 4, 8)],
             "use_additional_convs": True,
         },
         filter_network_params={
@@ -277,6 +277,7 @@ class SiFiGANGenerator(nn.Module):
         nonlinear_activation="LeakyReLU",
         nonlinear_activation_params={"negative_slope": 0.1},
         use_weight_norm=True,
+        gin_channels = 256,
     ):
         """Initialize SiFiGANGenerator module.
 
@@ -302,6 +303,11 @@ class SiFiGANGenerator(nn.Module):
         # check hyperparameters are valid
         assert kernel_size % 2 == 1, "Kernel size must be odd number."
         assert len(upsample_scales) == len(upsample_kernel_sizes)
+
+        #emb sid
+        if gin_channels != 0:
+            self.emb_g = nn.Embedding(12, gin_channels)
+            self.cond = nn.Conv1d(gin_channels, channels, 1)
 
         # define modules
         self.num_upsamples = len(upsample_kernel_sizes)
@@ -446,7 +452,7 @@ class SiFiGANGenerator(nn.Module):
         # reset parameters
         self.reset_parameters()
 
-    def forward(self, x, c, d):
+    def forward(self, x, c, d, sid):
         """Calculate forward propagation.
 
         Args:
@@ -458,8 +464,12 @@ class SiFiGANGenerator(nn.Module):
             Tensor: Output tensor (B, out_channels, T).
 
         """
+
+        #sid
+        sid_ = self.emb_g(sid).unsqueeze(-1)
+        sid_ = self.cond(sid_)
         # currently, same input feature is input to each network
-        c = self.input_conv(c)
+        c = self.input_conv(c) + sid_
         e = c
 
         # source-network forward
@@ -548,7 +558,7 @@ class SiFiGANDirectGenerator(nn.Module):
         upsample_kernel_sizes=(10, 8, 6, 4),
         source_network_params={
             "resblock_kernel_size": 3,  # currently only 3 is supported.
-            "resblock_dilations": [(1), (1, 2), (1, 2, 4), (1, 2, 4, 8)],
+            "resblock_dilations": [(1,), (1, 2), (1, 2, 4), (1, 2, 4, 8)],
             "use_additional_convs": True,
         },
         filter_network_params={

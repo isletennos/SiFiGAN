@@ -19,7 +19,7 @@ import numpy as np
 import soundfile as sf
 from hydra.utils import to_absolute_path
 from joblib import load
-from sifigan.utils import check_filename, read_hdf5, read_txt, validate_length
+from sifigan.utils import check_filename, read_hdf5, read_txt, validate_length, read_txt_split_sid
 from torch.utils.data import Dataset
 
 # A logger for this file
@@ -58,7 +58,7 @@ class AudioFeatDataset(Dataset):
 
         """
         # load audio and feature files & check filename
-        audio_files = read_txt(to_absolute_path(audio_list))
+        audio_files = read_txt_split_sid(to_absolute_path(audio_list), False)
         feat_files = read_txt(to_absolute_path(feat_list))
         assert check_filename(audio_files, feat_files)
 
@@ -158,6 +158,7 @@ class AudioFeatDataset(Dataset):
         # get dilated factor sequences
         f0 = read_hdf5(to_absolute_path(self.feat_files[idx]), "/f0")  # descrete F0
         cf0 = read_hdf5(to_absolute_path(self.feat_files[idx]), "/cf0")  # continuous F0
+        sid = read_hdf5(to_absolute_path(self.feat_files[idx]), "/sid")  # SID
 
         # adjust length
         aux_feats, f0, cf0, audio = validate_length(
@@ -165,9 +166,9 @@ class AudioFeatDataset(Dataset):
         )
 
         if self.return_filename:
-            items = self.feat_files[idx], audio, aux_feats, f0, cf0
+            items = self.feat_files[idx], audio, aux_feats, f0, cf0, sid
         else:
-            items = audio, aux_feats, f0, cf0
+            items = audio, aux_feats, f0, cf0, sid
 
         if self.allow_cache:
             self.caches[idx] = items

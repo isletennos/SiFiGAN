@@ -123,6 +123,23 @@ def read_txt(file_list):
         filenames = f.readlines()
     return [filename.replace("\n", "") for filename in filenames]
 
+def read_txt_split_sid(file_list, flag = True):
+    """Read .txt file list
+
+    Arg:
+        file_list (str): txt file filename
+
+    Return:
+        (list): list of read lines
+
+    """
+    with open(file_list, "r") as f:
+        filenames = f.readlines()
+    if flag:
+        return [filename.replace("\n", "").rsplit("|") for filename in filenames]
+    else:
+        return [filename.replace("\n", "").rsplit("|")[0] for filename in filenames]
+
 
 def check_filename(list1, list2):
     """Check the filenames of two list are matched

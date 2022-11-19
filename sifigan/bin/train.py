@@ -158,14 +158,17 @@ class Trainer(object):
     def _train_step(self, batch):
         """Train model one step."""
         # parse batch
-        x, d, y = batch
+        x, d, y, sid = batch
         x = tuple([x.to(self.device) for x in x])
         d = tuple([d[:1].to(self.device) for d in d])
         z, c, f0 = x
         y = y.to(self.device)
 
         # generator forward
-        outs = self.model["generator"](z, c, d)
+        print(z.shape)
+        print(c.shape)
+        print(d.shape)
+        outs = self.model["generator"](z, c, d, sid)
         y_ = outs[0]
 
         # calculate spectral loss
@@ -221,7 +224,7 @@ class Trainer(object):
         if self.steps > self.config.train.discriminator_train_start_steps:
             # re-compute y_
             with torch.no_grad():
-                y_ = self.model["generator"](z, c, d)[0]
+                y_ = self.model["generator"](z, c, d, sid)[0]
             # calculate discriminator loss
             p_fake = self.model["discriminator"](y_.detach())
             p_real = self.model["discriminator"](y)
@@ -275,14 +278,14 @@ class Trainer(object):
     def _eval_step(self, batch):
         """Evaluate model one step."""
         # parse batch
-        x, d, y = batch
+        x, d, y, sid = batch
         x = tuple([x.to(self.device) for x in x])
         d = tuple([d[:1].to(self.device) for d in d])
         z, c, f0 = x
         y = y.to(self.device)
 
         # generator forward
-        outs = self.model["generator"](z, c, d)
+        outs = self.model["generator"](z, c, d, sid)
         y_ = outs[0]
 
         # calculate spectral loss
@@ -382,7 +385,7 @@ class Trainer(object):
         # delayed import to avoid error related backend error
         import matplotlib.pyplot as plt
 
-        x, d, y = batch
+        x, d, y, sid = batch
         # use only the first sample
         x = [x[:1].to(self.device) for x in x]
         d = [d[:1].to(self.device) for d in d]
@@ -390,7 +393,7 @@ class Trainer(object):
         z, c, _ = x
 
         # generator forward
-        outs = self.model["generator"](z, c, d)
+        outs = self.model["generator"](z, c, d, sid)
 
         len50ms = int(self.config.data.sample_rate * 0.05)
         start = np.random.randint(0, self.config.data.batch_max_length - len50ms)
@@ -546,10 +549,10 @@ class Collater(object):
 
         """
         # time resolution check
-        y_batch, c_batch, f0_batch, cf0_batch = [], [], [], []
+        y_batch, c_batch, f0_batch, cf0_batch, sid_batch = [], [], [], [], []
         dfs_batch = [[] for _ in range(len(self.dense_factors))]
         for idx in range(len(batch)):
-            x, c, f0, cf0 = batch[idx]
+            x, c, f0, cf0, sid = batch[idx]
             if len(c) > self.batch_max_frames:
                 # randomly pickup with the batch_max_length length of the part
                 start_frame = np.random.randint(0, len(c) - self.batch_max_frames)
@@ -577,6 +580,7 @@ class Collater(object):
                 ]  # [(T', 1), ...]
             f0_batch += [f0.astype(np.float32).reshape(-1, 1)]  # [(T', 1), ...]
             cf0_batch += [cf0.astype(np.float32).reshape(-1, 1)]  # [(T', 1), ...]
+            sid_batch += [sid.astype(np.float32)]  # [(T', 1), ...]
 
         # convert each batch to tensor, asuume that each item in batch has the same length
         y_batch = torch.FloatTensor(np.array(y_batch)).transpose(2, 1)  # (B, 1, T)
@@ -587,6 +591,7 @@ class Collater(object):
             )  # (B, 1, T')
         f0_batch = torch.FloatTensor(np.array(f0_batch)).transpose(2, 1)  # (B, 1, T')
         cf0_batch = torch.FloatTensor(np.array(cf0_batch)).transpose(2, 1)  # (B, 1, T')
+        sid_batch = torch.FloatTensor(np.array(sid_batch)).long()  # (B, 1)
 
         # make input signal batch tensor
         if self.sine_f0_type == "cf0":
@@ -594,7 +599,7 @@ class Collater(object):
         elif self.sine_f0_type == "f0":
             in_batch = self.signal_generator(f0_batch)
 
-        return (in_batch, c_batch, f0_batch), dfs_batch, y_batch
+        return (in_batch, c_batch, f0_batch), dfs_batch, y_batch, sid_batch
 
     def _check_length(self, x, c, f0, cf0, dfs):
         """Assert the audio and feature lengths are correctly adjusted for upsamping."""
@@ -605,6 +610,7 @@ class Collater(object):
             assert len(x) * self.df_sample_rates[i] == len(dfs[i]) * self.sample_rate
 
 
+#
 @hydra.main(version_base=None, config_path="config", config_name="train")
 def main(config: DictConfig) -> None:
     """Run training process."""

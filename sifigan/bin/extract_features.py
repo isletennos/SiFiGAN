@@ -25,11 +25,12 @@ import pysptk
 import pyworld
 import soundfile as sf
 import yaml
+import time
 from hydra.utils import to_absolute_path
 from omegaconf import DictConfig, OmegaConf
 from scipy.interpolate import interp1d
 from scipy.signal import firwin, lfilter
-from sifigan.utils import read_txt, write_hdf5
+from sifigan.utils import read_txt, write_hdf5, read_txt_split_sid
 
 # A logger for this file
 logger = getLogger(__name__)
@@ -50,7 +51,7 @@ ALPHA = {
 
 def path_create(wav_list, in_dir, out_dir, extname):
     for wav_name in wav_list:
-        path_replace(wav_name, in_dir, out_dir, extname=extname)
+        path_replace(wav_name[0], in_dir, out_dir, extname=extname)
 
 
 def path_replace(filepath, inputpath, outputpath, extname=None):
@@ -114,11 +115,11 @@ def aux_list_create(wav_list_file, config):
 
     """
     aux_list_file = wav_list_file.replace(".scp", ".list")
-    wav_files = read_txt(wav_list_file)
+    wav_files = read_txt_split_sid(wav_list_file)
     with open(aux_list_file, "w") as f:
         for wav_name in wav_files:
             feat_name = path_replace(
-                wav_name,
+                wav_name[0],
                 config.in_dir,
                 config.out_dir,
                 extname=config.feature_format,
@@ -269,13 +270,13 @@ def world_feature_extract(queue, wav_list, config):
         logger.info(f"now processing {wav_name} ({i + 1}/{len(wav_list)})")
 
         # load wavfile
-        x, fs = sf.read(to_absolute_path(wav_name))
+        x, fs = sf.read(to_absolute_path(wav_name[0]))
         x = np.array(x, dtype=np.float)
 
         # check sampling frequency
         if not fs == config.sample_rate:
             logger.warning(
-                f"Sampling frequency of {wav_name} is not matched."
+                f"Sampling frequency of {wav_name[0]} is not matched."
                 + "Resample before feature extraction."
             )
             x = librosa.resample(x, orig_sr=fs, target_sr=config.sample_rate)
@@ -283,7 +284,7 @@ def world_feature_extract(queue, wav_list, config):
         # apply low-cut-filter
         if config.highpass_cutoff > 0:
             if (x == 0).all():
-                logger.info(f"xxxxx {wav_name}")
+                logger.info(f"xxxxx {wav_name[0]}")
                 continue
             x = low_cut_filter(x, config.sample_rate, cutoff=config.highpass_cutoff)
 
@@ -319,7 +320,7 @@ def world_feature_extract(queue, wav_list, config):
                 next_cutoff *= 2
         else:
             cf0_lpf = cf0
-            logger.warn(f"all of the f0 values are 0 {wav_name}.")
+            logger.warn(f"all of the f0 values are 0 {wav_name[0]}.")
         mcep = pysptk.sp2mc(env, order=config.mcep_dim, alpha=ALPHA[config.sample_rate])
         bap = pyworld.code_aperiodicity(ap, config.sample_rate)
 
@@ -333,7 +334,7 @@ def world_feature_extract(queue, wav_list, config):
 
         # save features
         feat_name = path_replace(
-            wav_name,
+            wav_name[0],
             config.in_dir,
             config.out_dir,
             extname=config.feature_format,
@@ -344,6 +345,7 @@ def world_feature_extract(queue, wav_list, config):
         write_hdf5(to_absolute_path(feat_name), "/cf0", cf0_lpf)
         write_hdf5(to_absolute_path(feat_name), "/mcep", mcep)
         write_hdf5(to_absolute_path(feat_name), "/bap", bap)
+        write_hdf5(to_absolute_path(feat_name), "/sid", np.int64(wav_name[1]))
 
     queue.put("Finish")
 
@@ -354,7 +356,7 @@ def main(config: DictConfig):
     logger.info(OmegaConf.to_yaml(config))
 
     # read list
-    file_list = read_txt(to_absolute_path(config.audio))
+    file_list = read_txt_split_sid(to_absolute_path(config.audio))
     logger.info(f"number of utterances = {len(file_list)}")
 
     # list division

@@ -10,7 +10,7 @@ hydra:
         format: '[%(asctime)s][%(levelname)s][%(module)s | %(lineno)s] %(message)s'
     disable_existing_loggers: false
 
-audio: data/scp/namine_ritsu_all.scp # List filr of input wav files.
+audio: data/scp/all.scp # List filr of input wav files.
 in_dir: wav                   # Directory of input feature files.
 out_dir: hdf5                 # Directory to save generated samples.
 feature_format: h5            # Feature format.
